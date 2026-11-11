@@ -1,0 +1,72 @@
+name: "Build macOS (AU + VST3)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Engine-Test ausführen (blockiert den Bau nicht)"
+        continue-on-error: true
+        run: |
+          clang++ -O2 -std=c++17 -ISource Tests/test_engine.cpp -o fg_test
+          ./fg_test | tee engine-test.txt
+
+      - name: "Plugin bauen (Universal: Apple Silicon + Intel)"
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF -DFG_BUILD_PROCESSOR_TEST=ON
+          cmake --build build --config Release -j 4
+
+      - name: "Prozessor-Test ausführen (Zustand, Presets, Export, Diagnose; blockiert nicht)"
+        continue-on-error: true
+        run: |
+          T=$(find build -name fg_proc_test -type f -perm -u+x | head -1)
+          echo "Test: $T"
+          "$T" | tee processor-test.txt
+
+      - name: "Bundles einsammeln und signieren (ad-hoc)"
+        run: |
+          mkdir -p out
+          find build -maxdepth 8 -name "*.component" -exec cp -R {} out/ \;
+          find build -maxdepth 8 -name "*.vst3"      -exec cp -R {} out/ \;
+          ls -la out
+          test -n "$(ls -A out)" || { echo "FEHLER: kein Plugin gebaut"; exit 1; }
+          for b in out/*; do codesign --force --deep --sign - "$b"; done
+
+      - name: "auval: Audio-Unit-Validierung (blockiert nicht)"
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R out/*.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -v aufx Fbg5 Fgrd 2>&1 | tee auval.txt
+
+      - name: "pluginval: Stresstest VST3 (blockiert nicht)"
+        continue-on-error: true
+        run: |
+          curl -L -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate-in-process --skip-gui-tests out/*.vst3 2>&1 | tee pluginval.txt
+
+      - name: "Zip erstellen"
+        if: always()
+        run: |
+          cd out && ditto -c -k --keepParent . ../FeedbackGuard-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "FeedbackGuard-macOS"
+          path: |
+            FeedbackGuard-macOS.zip
+            engine-test.txt
+            processor-test.txt
+            auval.txt
+            pluginval.txt
+          if-no-files-found: warn
