@@ -19,13 +19,15 @@ jobs:
 
       - name: "Plugin bauen (Universal: Apple Silicon + Intel)"
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=OFF -DFG_BUILD_PROCESSOR_TEST=ON
-          cmake --build build --config Release -j 4
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --target FeedbackGuard_AU FeedbackGuard_VST3 -j 4
 
-      - name: "Prozessor-Test ausführen (Zustand, Presets, Export, Diagnose; blockiert nicht)"
+      - name: "Prozessor-Test bauen und ausführen (blockiert den Bau nicht)"
         continue-on-error: true
         run: |
-          T=$(find build -name fg_proc_test -type f -perm -u+x | head -1)
+          cmake -B build-test -DCMAKE_BUILD_TYPE=Release -DFG_BUILD_PROCESSOR_TEST=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake --build build-test --config Release --target fg_proc_test -j 4
+          T=$(find build-test -name fg_proc_test -type f -perm -u+x | head -1)
           echo "Test: $T"
           "$T" | tee processor-test.txt
 
