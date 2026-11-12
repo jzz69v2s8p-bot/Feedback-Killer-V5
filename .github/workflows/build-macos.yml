@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: "Engine-Test ausführen (blockiert den Bau nicht)"
         continue-on-error: true
@@ -61,7 +61,7 @@ jobs:
         run: |
           cd out && ditto -c -k --keepParent . ../FeedbackGuard-macOS.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: "FeedbackGuard-macOS"
